@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>派案系統 - 手機優化版</title>
+    <style>
+        /* 基礎設定 */
+        body { 
+            font-family: "PingFang TC", "Heiti TC", "Microsoft JhengHei", sans-serif; 
+            margin: 0; 
+            padding: 10px;
+            line-height: 1.5; 
+            background-color: #f0f2f5; 
+            color: #333;
+        }
+        
+        .container { 
+            max-width: 100%; 
+            background: white; 
+            padding: 15px; 
+            border-radius: 12px; 
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1); 
+        }
+
+        h2 { 
+            font-size: 1.2rem;
+            color: #1a73e8; 
+            border-left: 4px solid #1a73e8; 
+            padding-left: 10px; 
+            margin: 0 0 20px 0; 
+        }
+
+        /* 輸入區域優化 */
+        .input-group { 
+            margin-bottom: 15px; 
+            display: flex; 
+            flex-direction: column; /* 手機優先：垂直排列 */
+        }
+
+        label { 
+            font-size: 0.95rem;
+            font-weight: bold; 
+            margin-bottom: 5px;
+            color: #5f6368; 
+        }
+
+        select { 
+            padding: 12px; /* 增加觸控面積 */
+            border-radius: 8px; 
+            border: 1px solid #dadce0; 
+            font-size: 1rem;
+            background-color: #fff;
+            -webkit-appearance: none; /* 清除 iOS 預設樣式 */
+        }
+
+        button { 
+            background-color: #1a73e8; 
+            color: white; 
+            cursor: pointer; 
+            border: none; 
+            width: 100%; 
+            padding: 15px; 
+            font-size: 1.1rem; 
+            margin-top: 10px; 
+            border-radius: 8px; 
+            font-weight: bold;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+
+        button:active {
+            background-color: #174ea6;
+            transform: scale(0.98);
+        }
+
+        /* 表格響應式處理 */
+        .table-responsive {
+            overflow-x: auto; /* 超出螢幕時可滑動 */
+            margin-top: 25px;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        table { 
+            width: 100%; 
+            border-collapse: collapse; 
+            background: white; 
+            min-width: 300px; /* 確保內容不縮成一團 */
+        }
+
+        th, td { 
+            border: 1px solid #e8eaed; 
+            padding: 12px 8px; 
+            text-align: center; 
+            font-size: 0.9rem;
+        }
+
+        th { background-color: #f8f9fa; font-weight: bold; }
+
+        .station-s1 { color: #1967d2; font-weight: bold; }
+        .station-s2 { color: #d93025; font-weight: bold; }
+        .highlight-row { background-color: #fef7e0; }
+
+        /* 電腦版微調 */
+        @media (min-width: 600px) {
+            .container { max-width: 600px; margin: 20px auto; padding: 30px; }
+            .input-group { flex-direction: row; align-items: center; }
+            label { width: 220px; margin-bottom: 0; }
+            select { flex-grow: 1; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>派案參數設定 (手機版)</h2>
+    
+    <div class="input-group">
+        <label>駐一人員數量 (4-10名)：</label>
+        <select id="s1Count" onchange="updateS1NextOptions()"></select>
+    </div>
+
+    <div class="input-group">
+        <label>件數最少者 (相同駐二優先)：</label>
+        <select id="minCollector">
+            <option value="S2">駐二 (優先)</option>
+            <option value="S1">駐一</option>
+        </select>
+    </div>
+
+    <div class="input-group">
+        <label>駐一下一案派給：</label>
+        <select id="s1Next"></select>
+    </div>
+
+    <div class="input-group">
+        <label>駐二下一案派給：</label>
+        <select id="s2Next">
+            <option value="1">第 1 個</option>
+            <option value="2">第 2 個</option>
+            <option value="3">第 3 個</option>
+        </select>
+    </div>
+
+    <button onclick="generateSchedule()">點擊產生 15 案順序</button>
+
+    <div class="table-responsive" id="resultArea"></div>
+</div>
+
+<script>
+    window.onload = function() {
+        const s1CountSelect = document.getElementById('s1Count');
+        for(let i=4; i<=10; i++) {
+            let opt = document.createElement('option');
+            opt.value = i; opt.text = i + ' 名';
+            if(i === 6) opt.selected = true; 
+            s1CountSelect.appendChild(opt);
+        }
+        updateS1NextOptions(); 
+    };
+
+    function updateS1NextOptions() {
+        const count = parseInt(document.getElementById('s1Count').value);
+        const nextSelect = document.getElementById('s1Next');
+        nextSelect.innerHTML = '';
+        for(let i=1; i<=count; i++) {
+            let opt = document.createElement('option');
+            opt.value = i; opt.text = '第 ' + i + ' 位';
+            if(i === 4 && count >= 4) opt.selected = true; 
+            nextSelect.appendChild(opt);
+        }
+    }
+
+    function generateSchedule() {
+        const S1_MAX = parseInt(document.getElementById('s1Count').value);
+        const S2_MAX = 3;
+        const startStation = document.getElementById('minCollector').value;
+        const s1StartValue = parseInt(document.getElementById('s1Next').value);
+        const s2StartValue = parseInt(document.getElementById('s2Next').value);
+
+        let results = [];
+        let s1Ptr = s1StartValue;
+        let s2Ptr = s2StartValue;
+        let currentStation = startStation;
+
+        for (let i = 1; i <= 15; i++) {
+            let info = { id: i, station: '', person: 0 };
+            if (currentStation === 'S2') {
+                info.station = '駐二';
+                info.person = s2Ptr;
+                if (s2Ptr >= S2_MAX) { s2Ptr = 1; currentStation = 'S1'; } 
+                else { s2Ptr++; }
+            } else {
+                info.station = '駐一';
+                info.person = s1Ptr;
+                if (s1Ptr >= S1_MAX) { s1Ptr = 1; currentStation = 'S2'; } 
+                else { s1Ptr++; }
+            }
+            results.push(info);
+        }
+        renderTable(results);
+    }
+
+    function renderTable(data) {
+        let html = `<table>
+            <thead>
+                <tr>
+                    <th>案號</th>
+                    <th>駐區</th>
+                    <th>人員</th>
+                </tr>
+            </thead>
+            <tbody>`;
+        data.forEach(item => {
+            const stationClass = item.station === '駐一' ? 'station-s1' : 'station-s2';
+            const rowClass = item.id === 1 ? 'highlight-row' : '';
+            html += `<tr class="${rowClass}">
+                <td>${item.id}</td>
+                <td class="${stationClass}">${item.station}</td>
+                <td>第 ${item.person} 位</td>
+            </tr>`;
+        });
+        html += `</tbody></table>`;
+        document.getElementById('resultArea').innerHTML = html;
+        
+        // 產生結果後自動捲動到表格
+        document.getElementById('resultArea').scrollIntoView({ behavior: 'smooth' });
+    }
+</script>
+
+</body>
+</html>
