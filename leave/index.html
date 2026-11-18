@@ -1,0 +1,574 @@
+<title>雲端劃假系統</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+/* Layout: 單欄值勤表風格，上方狀態列 → 月曆（主體）→ 我的選填 / 全員總表；管理設定收在可展開區 */
+:root {
+  --bg: #eef1f5;
+  --surface: #ffffff;
+  --ink: #17202f;
+  --muted: #5b6678;
+  --line: #d5dbe4;
+  --navy: #1f3a63;
+  --accent: #d9821e;        /* 我的假：琥珀色 */
+  --accent-ink: #ffffff;
+  --accent-soft: #fbe9d2;
+  --full: #b4402f;
+  --full-soft: #f6dcd7;
+  --blocked: #8a93a3;
+  --blocked-soft: #e3e7ee;
+  --ok: #2f7a4b;
+  --ok-soft: #dcefe2;
+  --weekend: #f6f1e7;
+  --font-body: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif;
+  --font-num: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --r: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f141c; --surface: #172030; --ink: #e6ebf2; --muted: #98a3b5; --line: #2a3648;
+    --navy: #8fb2e6; --accent: #f0a043; --accent-ink: #1a1206; --accent-soft: #3a2a14;
+    --full: #f08a78; --full-soft: #3d221f; --blocked: #7b8597; --blocked-soft: #222b39;
+    --ok: #7fd09c; --ok-soft: #173325; --weekend: #1c2433; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f141c; --surface: #172030; --ink: #e6ebf2; --muted: #98a3b5; --line: #2a3648;
+  --navy: #8fb2e6; --accent: #f0a043; --accent-ink: #1a1206; --accent-soft: #3a2a14;
+  --full: #f08a78; --full-soft: #3d221f; --blocked: #7b8597; --blocked-soft: #222b39;
+  --ok: #7fd09c; --ok-soft: #173325; --weekend: #1c2433; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--font-body);
+  font-size: 15px; line-height: 1.55;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 20px 48px;
+}
+.wrap { max-width: 980px; margin: 0 auto; display: grid; gap: 18px; }
+h1, h2 { margin: 0; text-wrap: balance; }
+h1 { font-size: 1.55rem; font-weight: 900; letter-spacing: .02em; }
+h2 { font-size: 1.05rem; font-weight: 700; }
+.num { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+.eyebrow { font-size: .75rem; letter-spacing: .12em; color: var(--muted); font-weight: 700; }
+
+/* 頁首 */
+header { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; }
+.title-block { display: grid; gap: 2px; }
+.pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: .82rem; font-weight: 700; }
+.pill.open { background: var(--ok-soft); color: var(--ok); }
+.pill.closed { background: var(--full-soft); color: var(--full); }
+.pill .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.banner { padding: 10px 14px; border-radius: var(--r); background: var(--blocked-soft); color: var(--ink); font-size: .9rem; }
+.banner[data-tone="warn"] { background: var(--accent-soft); }
+
+/* 狀態列 */
+.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); }
+.stat { padding: 12px 14px; display: grid; gap: 2px; min-width: 0; }
+.stat + .stat { border-left: 1px solid var(--line); }
+.stat .v { font-size: 1.35rem; font-weight: 700; }
+.stat .k { font-size: .78rem; color: var(--muted); }
+@media (max-width: 560px) {
+  .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .stat:nth-child(3) { border-left: 0; }
+  .stat:nth-child(n+3) { border-top: 1px solid var(--line); }
+}
+
+/* 身分 */
+.me { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.me label { font-size: .85rem; color: var(--muted); font-weight: 700; }
+input[type="text"], input[type="number"], input[type="month"] {
+  font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line);
+  border-radius: 8px; padding: 8px 10px; min-width: 0;
+}
+input:focus-visible, button:focus-visible, .day:focus-visible { outline: 2px solid var(--navy); outline-offset: 2px; }
+button {
+  font: inherit; font-weight: 700; cursor: pointer; border-radius: 8px; padding: 8px 14px;
+  border: 1px solid var(--navy); background: var(--navy); color: var(--surface);
+}
+button.ghost { background: transparent; color: var(--navy); }
+button:disabled { opacity: .5; cursor: not-allowed; }
+
+/* 月曆 */
+.cal-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 14px; display: grid; gap: 12px; }
+.cal-head { display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; align-items: center; }
+.legend { display: flex; flex-wrap: wrap; gap: 12px; font-size: .8rem; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 14px; height: 14px; border-radius: 4px; border: 1px solid var(--line); display: inline-block; }
+.sw.mine { background: var(--accent); border-color: var(--accent); }
+.sw.full { background: repeating-linear-gradient(45deg, var(--full-soft) 0 4px, var(--surface) 4px 8px); border-color: var(--full); }
+.sw.blocked { background: var(--blocked-soft); border-color: var(--blocked); }
+.grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+.dow { text-align: center; font-size: .78rem; font-weight: 700; color: var(--muted); padding-bottom: 2px; }
+.dow.we { color: var(--full); }
+.day {
+  position: relative; min-height: 96px; border: 1px solid var(--line); border-radius: 8px;
+  padding: 6px 7px; display: flex; flex-direction: column; gap: 4px; background: var(--surface);
+  text-align: left; color: var(--ink); font-weight: 400; cursor: pointer; min-width: 0;
+}
+.day.we { background: var(--weekend); }
+.day.pad { visibility: hidden; }
+.day .d { display: flex; justify-content: space-between; align-items: baseline; gap: 4px; }
+.day .d b { font-family: var(--font-num); font-size: 1rem; }
+.day .cnt { font-family: var(--font-num); font-size: .72rem; color: var(--muted); }
+.meter { height: 4px; border-radius: 2px; background: var(--blocked-soft); overflow: hidden; }
+.meter i { display: block; height: 100%; background: var(--navy); }
+.names { display: flex; flex-wrap: wrap; gap: 3px; min-width: 0; }
+.chip { font-size: .7rem; line-height: 1.3; padding: 1px 5px; border-radius: 4px; background: var(--blocked-soft); color: var(--ink); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip.me { background: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.day.mine { border: 2px solid var(--accent); background: var(--accent-soft); }
+.day.full:not(.mine) { background: repeating-linear-gradient(45deg, var(--full-soft) 0 6px, var(--surface) 6px 12px); border-color: var(--full); cursor: not-allowed; }
+.day.full .cnt { color: var(--full); font-weight: 700; }
+.day.blocked { background: var(--blocked-soft); border-style: dashed; border-color: var(--blocked); cursor: not-allowed; }
+.day.blocked .tag { font-size: .7rem; font-weight: 700; color: var(--blocked); }
+.day.today .d b { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 3px; }
+.editing .day:not(.pad) { cursor: crosshair; }
+@media (hover: hover) { .day:not(.pad):not(.blocked):not(.full):hover { border-color: var(--navy); } }
+@media (max-width: 620px) {
+  .grid { gap: 3px; }
+  .day { min-height: 62px; padding: 4px; }
+  .names .chip:not(.me) { display: none; }
+  .names .chip.me { font-size: 0; width: 8px; height: 8px; padding: 0; border-radius: 50%; }
+  .day .cnt { font-size: .62rem; }
+}
+
+/* 下方兩欄 */
+.lower { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 18px; align-items: start; }
+@media (max-width: 760px) { .lower { grid-template-columns: minmax(0, 1fr); } }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 14px; display: grid; gap: 10px; min-width: 0; }
+.mylist { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.mylist li { display: inline-flex; align-items: center; gap: 6px; padding: 4px 4px 4px 10px; border-radius: 6px; background: var(--accent-soft); font-family: var(--font-num); font-size: .85rem; }
+.mylist button { padding: 0 7px; font-size: .8rem; line-height: 1.6; background: transparent; color: var(--ink); border: 1px solid var(--line); }
+.empty { color: var(--muted); font-size: .9rem; }
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: .75rem; letter-spacing: .06em; color: var(--muted); }
+td.n { font-family: var(--font-num); white-space: nowrap; }
+td.dates { font-family: var(--font-num); font-size: .8rem; color: var(--muted); }
+tr.is-me td { background: var(--accent-soft); }
+
+/* 管理 */
+details.admin { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); }
+details.admin summary { padding: 12px 14px; cursor: pointer; font-weight: 700; }
+.admin-body { padding: 0 14px 14px; display: grid; gap: 12px; }
+.fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.field { display: grid; gap: 4px; font-size: .82rem; color: var(--muted); font-weight: 700; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.check { display: inline-flex; gap: 6px; align-items: center; font-weight: 700; font-size: .9rem; }
+.hint { font-size: .82rem; color: var(--muted); margin: 0; }
+
+.toast {
+  position: fixed; left: 50%; transform: translateX(-50%);
+  bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+  background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 8px;
+  font-size: .9rem; font-weight: 500; max-width: calc(100% - 32px); z-index: 20;
+}
+@media (prefers-reduced-motion: no-preference) { .day { transition: border-color .12s, background-color .12s; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="title-block">
+      <span class="eyebrow">LEAVE SELECTION · 線上選填</span>
+      <h1>雲端劃假系統</h1>
+    </div>
+    <span id="status" class="pill open"><span class="dot"></span><span id="statusText">開放選填中</span></span>
+  </header>
+
+  <div id="banner" class="banner" hidden></div>
+
+  <section class="stats" aria-label="本月概況">
+    <div class="stat"><span class="v num" id="sMonth">—</span><span class="k">選填月份</span></div>
+    <div class="stat"><span class="v num" id="sMine">0 / 0</span><span class="k">我已選天數 / 上限</span></div>
+    <div class="stat"><span class="v num" id="sLimit">0</span><span class="k">每日休假人數上限</span></div>
+    <div class="stat"><span class="v num" id="sPeople">0</span><span class="k">已填人數</span></div>
+  </section>
+
+  <div class="me">
+    <label for="myName">我的姓名</label>
+    <input type="text" id="myName" maxlength="20" placeholder="例：王小明 / 警員 3 號">
+    <span class="hint" id="nameHint">填寫後其他同仁才看得出是誰選的。</span>
+  </div>
+
+  <section class="cal-card" id="calCard">
+    <div class="cal-head">
+      <h2 id="calTitle">月曆</h2>
+      <div class="legend">
+        <span><i class="sw mine"></i>我選的</span>
+        <span><i class="sw full"></i>已額滿</span>
+        <span><i class="sw blocked"></i>禁休日</span>
+      </div>
+    </div>
+    <div class="grid" id="dow"></div>
+    <div class="grid" id="cal"></div>
+    <p class="hint">點日期即可選填或取消。每格右上角為「已選人數 / 每日上限」。</p>
+  </section>
+
+  <div class="lower">
+    <section class="panel">
+      <h2>我的選填</h2>
+      <ul class="mylist" id="myList"></ul>
+    </section>
+    <section class="panel">
+      <div class="row" style="justify-content: space-between;">
+        <h2>全員總表</h2>
+        <button class="ghost" id="copyCsv" type="button">複製總表 (CSV)</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>姓名</th><th>天數</th><th>日期</th></tr></thead>
+          <tbody id="roster"></tbody>
+        </table>
+      </div>
+      <textarea id="csvOut" rows="4" hidden readonly style="width:100%; font-family: var(--font-num); font-size:.8rem;"></textarea>
+    </section>
+  </div>
+
+  <details class="admin" id="admin" hidden>
+    <summary>管理者設定</summary>
+    <div class="admin-body">
+      <div class="fields">
+        <label class="field">選填月份<input type="month" id="cfgMonth"></label>
+        <label class="field">每日休假人數上限<input type="number" id="cfgLimit" min="1" max="50"></label>
+        <label class="field">每人可選天數上限<input type="number" id="cfgMax" min="1" max="31"></label>
+      </div>
+      <div class="row">
+        <label class="check"><input type="checkbox" id="cfgClosed"> 截止選填（同仁不可再更動）</label>
+      </div>
+      <div class="row">
+        <label class="check"><input type="checkbox" id="editBlocked"> 編輯禁休日（勾選後點月曆日期切換）</label>
+      </div>
+      <div class="row">
+        <button type="button" id="saveCfg">儲存設定</button>
+        <span class="hint" id="cfgHint"></span>
+      </div>
+    </div>
+  </details>
+</div>
+
+<div class="toast" id="toast" hidden role="status"></div>
+
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const WD = ["日", "一", "二", "三", "四", "五", "六"];
+  const pad2 = (n) => String(n).padStart(2, "0");
+
+  function nextMonthStr() {
+    const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() + 1);
+    return d.getFullYear() + "-" + pad2(d.getMonth() + 1);
+  }
+  const DEFAULT_CFG = { month: nextMonthStr(), dailyLimit: 3, maxDays: 8, closed: false, blocked: [] };
+
+  const S = {
+    mode: "loading",        // loading | cloud | local
+    cfg: { ...DEFAULT_CFG },
+    picks: {},              // uid -> {name, days, updatedAt}
+    profileNames: {},
+    me: null,
+    canEdit: false,
+    editBlocked: false,
+    db: null, user: null,
+    saving: false,
+  };
+
+  // ---------- 工具 ----------
+  let toastTimer;
+  function toast(msg) {
+    const t = $("toast"); t.textContent = msg; t.hidden = false;
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => (t.hidden = true), 2600);
+  }
+  function banner(msg, tone) {
+    const b = $("banner");
+    if (!msg) { b.hidden = true; return; }
+    b.textContent = msg; b.dataset.tone = tone || ""; b.hidden = false;
+  }
+  function monthDays(month) {
+    const [y, m] = month.split("-").map(Number);
+    const n = new Date(y, m, 0).getDate();
+    const first = new Date(y, m - 1, 1).getDay();
+    const out = [];
+    for (let i = 1; i <= n; i++) out.push({ iso: month + "-" + pad2(i), d: i, wd: (first + i - 1) % 7 });
+    return { first, days: out };
+  }
+  function inMonth(iso) { return iso.slice(0, 7) === S.cfg.month; }
+  function displayName(uid) {
+    const p = S.picks[uid];
+    return (p && p.name) || S.profileNames[uid] || "未具名同仁";
+  }
+  function myDays() { return ((S.picks[S.me] && S.picks[S.me].days) || []).slice(); }
+  function countsByDay() {
+    const c = {};
+    for (const uid in S.picks) for (const iso of (S.picks[uid].days || [])) {
+      if (!inMonth(iso)) continue; (c[iso] = c[iso] || []).push(uid);
+    }
+    return c;
+  }
+  function todayIso() { const d = new Date(); return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate()); }
+
+  // ---------- 繪製 ----------
+  function render() {
+    const cfg = S.cfg;
+    const [y, m] = cfg.month.split("-");
+    $("sMonth").textContent = y + "/" + m;
+    $("calTitle").textContent = (Number(y) - 1911) + " 年 " + Number(m) + " 月";
+    const mine = myDays().filter(inMonth);
+    $("sMine").textContent = mine.length + " / " + cfg.maxDays;
+    $("sLimit").textContent = cfg.dailyLimit;
+    const filled = Object.keys(S.picks).filter((u) => (S.picks[u].days || []).some(inMonth));
+    $("sPeople").textContent = filled.length;
+    $("status").className = "pill " + (cfg.closed ? "closed" : "open");
+    $("statusText").textContent = cfg.closed ? "已截止" : "開放選填中";
+
+    // 星期列
+    $("dow").innerHTML = WD.map((w, i) => `<div class="dow${i === 0 || i === 6 ? " we" : ""}">${w}</div>`).join("");
+
+    // 月曆
+    const { first, days } = monthDays(cfg.month);
+    const counts = countsByDay();
+    const blocked = new Set(cfg.blocked || []);
+    const today = todayIso();
+    const cal = $("cal"); cal.textContent = "";
+    $("calCard").classList.toggle("editing", S.editBlocked);
+    for (let i = 0; i < first; i++) { const p = document.createElement("div"); p.className = "day pad"; cal.appendChild(p); }
+    for (const day of days) {
+      const who = counts[day.iso] || [];
+      const isMine = S.me && who.includes(S.me);
+      const isFull = who.length >= cfg.dailyLimit;
+      const isBlocked = blocked.has(day.iso);
+      const el = document.createElement("button");
+      el.type = "button";
+      el.className = "day" + (day.wd === 0 || day.wd === 6 ? " we" : "") + (isMine ? " mine" : "") +
+        (isFull ? " full" : "") + (isBlocked ? " blocked" : "") + (day.iso === today ? " today" : "");
+      el.setAttribute("aria-label", `${Number(m)} 月 ${day.d} 日，${who.length} 人選填，上限 ${cfg.dailyLimit}${isMine ? "，已選" : ""}${isBlocked ? "，禁休" : ""}`);
+      el.setAttribute("aria-pressed", isMine ? "true" : "false");
+      const head = document.createElement("div"); head.className = "d";
+      const b = document.createElement("b"); b.textContent = day.d;
+      const cnt = document.createElement("span"); cnt.className = "cnt";
+      cnt.textContent = isBlocked ? "" : who.length + "/" + cfg.dailyLimit;
+      head.append(b, cnt); el.appendChild(head);
+      if (isBlocked) {
+        const tag = document.createElement("span"); tag.className = "tag"; tag.textContent = "禁休"; el.appendChild(tag);
+      } else {
+        const meter = document.createElement("div"); meter.className = "meter";
+        const bar = document.createElement("i"); bar.style.width = Math.min(100, (who.length / cfg.dailyLimit) * 100) + "%";
+        meter.appendChild(bar); el.appendChild(meter);
+      }
+      const names = document.createElement("div"); names.className = "names";
+      const sorted = who.slice().sort((a, b2) => (a === S.me ? -1 : b2 === S.me ? 1 : 0));
+      for (const uid of sorted) {
+        const c = document.createElement("span"); c.className = "chip" + (uid === S.me ? " me" : "");
+        c.textContent = uid === S.me ? "我" : displayName(uid); c.title = displayName(uid);
+        names.appendChild(c);
+      }
+      el.appendChild(names);
+      el.addEventListener("click", () => onDay(day.iso));
+      cal.appendChild(el);
+    }
+
+    // 我的選填
+    const ml = $("myList"); ml.textContent = "";
+    if (!mine.length) {
+      const li = document.createElement("li"); li.className = "empty"; li.style.background = "none";
+      li.textContent = cfg.closed ? "本月未選填休假。" : "還沒選任何日期，點上方月曆開始選填。";
+      ml.appendChild(li);
+    } else {
+      for (const iso of mine.sort()) {
+        const li = document.createElement("li");
+        const wd = WD[new Date(iso + "T00:00:00").getDay()];
+        li.append(document.createTextNode(iso.slice(5).replace("-", "/") + "（" + wd + "）"));
+        const x = document.createElement("button"); x.type = "button"; x.textContent = "×";
+        x.setAttribute("aria-label", "取消 " + iso); x.disabled = cfg.closed && !S.canEdit;
+        x.addEventListener("click", () => onDay(iso));
+        li.appendChild(x); ml.appendChild(li);
+      }
+    }
+
+    // 總表
+    const tb = $("roster"); tb.textContent = "";
+    const rows = filled.map((u) => ({ u, name: displayName(u), days: S.picks[u].days.filter(inMonth).sort() }))
+      .sort((a, b2) => a.name.localeCompare(b2.name, "zh-Hant"));
+    if (!rows.length) {
+      const tr = document.createElement("tr"); const td = document.createElement("td");
+      td.colSpan = 3; td.className = "empty"; td.textContent = "尚無人選填。分享此頁連結給同仁，大家選的日期會即時出現在這裡。";
+      tr.appendChild(td); tb.appendChild(tr);
+    }
+    for (const r of rows) {
+      const tr = document.createElement("tr"); if (r.u === S.me) tr.className = "is-me";
+      const a = document.createElement("td"); a.textContent = r.name + (r.u === S.me ? "（我）" : "");
+      const b2 = document.createElement("td"); b2.className = "n"; b2.textContent = r.days.length;
+      const c = document.createElement("td"); c.className = "dates"; c.textContent = r.days.map((d) => Number(d.slice(8))).join("、");
+      tr.append(a, b2, c); tb.appendChild(tr);
+    }
+
+    // 管理
+    $("admin").hidden = !S.canEdit;
+    if (S.canEdit && document.activeElement && !document.activeElement.closest(".admin-body")) syncAdminInputs();
+
+    const nameInput = $("myName");
+    if (document.activeElement !== nameInput) nameInput.value = (S.picks[S.me] && S.picks[S.me].name) || nameInput.value || "";
+  }
+
+  function syncAdminInputs() {
+    $("cfgMonth").value = S.cfg.month;
+    $("cfgLimit").value = S.cfg.dailyLimit;
+    $("cfgMax").value = S.cfg.maxDays;
+    $("cfgClosed").checked = !!S.cfg.closed;
+  }
+
+  // ---------- 操作 ----------
+  async function onDay(iso) {
+    if (S.mode === "loading") { toast("資料載入中，請稍候。"); return; }
+    if (S.editBlocked && S.canEdit) {
+      const set = new Set(S.cfg.blocked || []);
+      set.has(iso) ? set.delete(iso) : set.add(iso);
+      S.cfg = { ...S.cfg, blocked: [...set].sort() };
+      $("cfgHint").textContent = "禁休日已變更，記得按「儲存設定」。";
+      render(); return;
+    }
+    if (!S.me) { toast("無法辨識身分，請先登入 claude.ai。"); return; }
+    if (S.cfg.closed && !S.canEdit) { toast("本月已截止選填，無法更動。"); return; }
+    const days = myDays();
+    const has = days.includes(iso);
+    if (!has) {
+      if ((S.cfg.blocked || []).includes(iso)) { toast("這天是禁休日，不可選填。"); return; }
+      if (days.filter(inMonth).length >= S.cfg.maxDays) { toast(`每人最多選 ${S.cfg.maxDays} 天，請先取消其他日期。`); return; }
+      const n = (countsByDay()[iso] || []).length;
+      if (n >= S.cfg.dailyLimit) { toast("這天已額滿，請改選其他日期。"); return; }
+    }
+    const next = has ? days.filter((d) => d !== iso) : days.concat(iso).sort();
+    await saveMine({ days: next });
+  }
+
+  async function saveMine(patch) {
+    const cur = S.picks[S.me] || { name: "", days: [] };
+    const body = { name: cur.name || "", days: cur.days || [], ...patch, updatedAt: new Date().toISOString() };
+    const prev = S.picks[S.me];
+    S.picks = { ...S.picks, [S.me]: body };
+    render();
+    if (S.mode === "local") { saveLocal(); return; }
+    try {
+      await S.db.collection("picks").doc(S.me).set(body);
+    } catch (e) {
+      S.picks = { ...S.picks }; if (prev) S.picks[S.me] = prev; else delete S.picks[S.me];
+      render();
+      toast(e && e.code === "permission_denied"
+        ? "你目前只有檢視權限，請管理者在分享設定中給你「可使用 (Contributor)」權限。"
+        : "儲存失敗，請檢查網路後再試一次。");
+    }
+  }
+
+  let nameTimer;
+  $("myName").addEventListener("input", () => {
+    clearTimeout(nameTimer);
+    nameTimer = setTimeout(() => {
+      if (!S.me) return;
+      const v = $("myName").value.trim().slice(0, 20);
+      if (((S.picks[S.me] && S.picks[S.me].name) || "") === v) return;
+      saveMine({ name: v });
+    }, 600);
+  });
+
+  $("editBlocked").addEventListener("change", (e) => { S.editBlocked = e.target.checked; render(); });
+
+  $("saveCfg").addEventListener("click", async () => {
+    const month = $("cfgMonth").value || S.cfg.month;
+    const dailyLimit = Math.max(1, Math.min(50, parseInt($("cfgLimit").value, 10) || 1));
+    const maxDays = Math.max(1, Math.min(31, parseInt($("cfgMax").value, 10) || 1));
+    const cfg = { month, dailyLimit, maxDays, closed: $("cfgClosed").checked,
+      blocked: (S.cfg.blocked || []).filter((d) => d.slice(0, 7) === month) };
+    S.cfg = cfg; render();
+    if (S.mode === "local") { saveLocal(); $("cfgHint").textContent = "已儲存（本機）。"; return; }
+    $("saveCfg").disabled = true;
+    try { await S.db.doc("config/settings").set(cfg); $("cfgHint").textContent = "已儲存，所有同仁會即時看到新設定。"; }
+    catch (e) { $("cfgHint").textContent = "儲存失敗：只有管理者（Editor 以上）可以修改設定。"; }
+    finally { $("saveCfg").disabled = false; }
+  });
+
+  $("copyCsv").addEventListener("click", () => {
+    const { days } = monthDays(S.cfg.month);
+    const counts = countsByDay();
+    const lines = ["日期,星期,人數,姓名"];
+    for (const d of days) {
+      const who = counts[d.iso] || [];
+      lines.push([d.iso, WD[d.wd], who.length, '"' + who.map(displayName).join("、").replace(/"/g, '""') + '"'].join(","));
+    }
+    const csv = lines.join("\n");
+    const out = $("csvOut");
+    const fallback = () => { out.value = csv; out.hidden = false; out.focus(); out.select(); toast("已顯示 CSV，請手動複製。"); };
+    try {
+      navigator.clipboard.writeText(csv).then(() => toast("已複製每日休假總表，可貼到 Excel。"), fallback);
+    } catch (e) { fallback(); }
+  });
+
+  // ---------- 本機模式 ----------
+  const LS_KEY = "leave-picker-local-v1";
+  function saveLocal() {
+    try { localStorage.setItem(LS_KEY, JSON.stringify({ cfg: S.cfg, picks: S.picks })); } catch (e) {}
+  }
+  function startLocal(reason) {
+    S.mode = "local"; S.me = "local-me"; S.canEdit = true;
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      if (raw) { const o = JSON.parse(raw); S.cfg = { ...DEFAULT_CFG, ...o.cfg }; S.picks = o.picks || {}; }
+    } catch (e) {}
+    banner(reason + " 目前為本機示範模式：選填只存在這台裝置，其他人看不到。", "warn");
+    syncAdminInputs(); render();
+  }
+
+  // ---------- 雲端模式 ----------
+  async function resolveNames() {
+    if (!S.user) return;
+    const ids = Object.keys(S.picks).filter((u) => !(S.picks[u].name) && !(u in S.profileNames));
+    if (!ids.length) return;
+    try {
+      const ps = await S.user.profiles(ids);
+      for (const id of ids) S.profileNames[id] = (ps[id] && ps[id].name) || "";
+      render();
+    } catch (e) {}
+  }
+
+  async function startCloud() {
+    if (!window.claude || typeof window.claude.use !== "function") { startLocal("此頁面不在 claude.ai 中開啟。"); return; }
+    const [db, user] = await Promise.all([window.claude.use("db"), window.claude.use("user")]);
+    if (!db || !user) { startLocal("尚未登入 claude.ai 或無法連到雲端資料庫。"); return; }
+    S.db = db; S.user = user;
+    S.me = await user.id();
+    S.canEdit = !!(await user.canEdit());
+    if (!S.me) { startLocal("無法辨識你的身分。"); return; }
+    S.mode = "cloud";
+    const me = await user.me().catch(() => null);
+    if (me && me.name) S.profileNames[S.me] = me.name;
+
+    let gotCfg = false, gotPicks = false;
+    const timer = setTimeout(() => {
+      if (!(gotCfg && gotPicks)) banner("雲端資料暫時連不上，畫面可能不是最新狀態。", "warn");
+    }, 10000);
+    const settle = () => { if (gotCfg && gotPicks) { clearTimeout(timer); banner(""); } };
+
+    db.doc("config/settings").onSnapshot((snap) => {
+      if (!snap.metadata.fromCache) gotCfg = true;
+      S.cfg = snap.exists ? { ...DEFAULT_CFG, ...snap.data() } : { ...DEFAULT_CFG };
+      if (S.canEdit && !document.activeElement?.closest?.(".admin-body") && !S.editBlocked) syncAdminInputs();
+      settle(); render();
+    }, () => { gotCfg = true; clearTimeout(timer); banner("無法讀取設定，請重新整理頁面。", "warn"); });
+
+    db.collection("picks").onSnapshot((snap) => {
+      if (!snap.metadata.fromCache) gotPicks = true;
+      const next = {};
+      snap.docs.forEach((d) => { const v = d.data() || {}; next[d.id] = { name: v.name || "", days: Array.isArray(v.days) ? v.days : [] }; });
+      S.picks = next;
+      settle(); render(); resolveNames();
+    }, () => { gotPicks = true; clearTimeout(timer); banner("無法讀取選填資料，請重新整理頁面。", "warn"); });
+
+    render();
+  }
+
+  render();
+  startCloud().catch(() => startLocal("連線發生錯誤。"));
+})();
+</script>
