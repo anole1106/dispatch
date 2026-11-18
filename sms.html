@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>罐頭簡訊</title>
+    <style>
+        body {
+            font-family: "PingFang TC", "Heiti TC", "Microsoft JhengHei", sans-serif;
+            margin: 0; padding: 10px; line-height: 1.5;
+            background-color: #f0f2f5; color: #333;
+        }
+        .container {
+            background: white; padding: 15px; border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        h2 {
+            font-size: 1.2rem; color: #1a73e8;
+            border-left: 4px solid #1a73e8; padding-left: 10px; margin: 0 0 20px 0;
+        }
+        label { display: block; font-size: 0.95rem; font-weight: bold; margin-bottom: 5px; color: #5f6368; }
+        .field { margin-bottom: 15px; }
+        input, select, textarea {
+            width: 100%; box-sizing: border-box; padding: 12px;
+            border-radius: 8px; border: 1px solid #dadce0; font-size: 1rem;
+            background: #fff; font-family: inherit;
+        }
+        input[type=tel] { font-size: 1.4rem; letter-spacing: 1px; }
+        textarea { min-height: 110px; resize: vertical; }
+        .hint { font-size: 0.85rem; color: #80868b; margin-top: 4px; }
+        .error { color: #d93025; }
+        button {
+            background-color: #1a73e8; color: white; border: none; width: 100%;
+            padding: 15px; font-size: 1.1rem; border-radius: 8px; font-weight: bold;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2); cursor: pointer;
+        }
+        button:active { background-color: #174ea6; transform: scale(0.98); }
+        button.secondary { background: #fff; color: #1a73e8; border: 1px solid #1a73e8; box-shadow: none; padding: 10px; font-size: 0.95rem; }
+        .row { display: flex; gap: 8px; margin-top: 8px; }
+        .row button { flex: 1; }
+        details { margin-top: 25px; }
+        summary { cursor: pointer; color: #5f6368; font-weight: bold; }
+        @media (min-width: 600px) {
+            .container { max-width: 600px; margin: 20px auto; padding: 30px; }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h2>罐頭簡訊</h2>
+
+    <div class="field">
+        <label for="phone">對方電話</label>
+        <input id="phone" type="tel" inputmode="tel" placeholder="0912345678" autocomplete="off">
+        <div id="phoneHint" class="hint">輸入後按「傳送」，會開啟手機簡訊 App 並自動帶入內容，按送出即可。</div>
+    </div>
+
+    <div class="field">
+        <label for="template">選擇範本</label>
+        <select id="template"></select>
+    </div>
+
+    <div class="field">
+        <label for="message">簡訊內容（可臨時修改）</label>
+        <textarea id="message"></textarea>
+        <div id="count" class="hint"></div>
+    </div>
+
+    <button id="sendBtn">傳送簡訊</button>
+
+    <details>
+        <summary>管理範本</summary>
+        <div class="hint">範本只存在這支手機的瀏覽器裡。</div>
+        <div class="row">
+            <button class="secondary" id="saveBtn">把目前內容存成目前範本</button>
+        </div>
+        <div class="row">
+            <button class="secondary" id="addBtn">新增範本</button>
+            <button class="secondary" id="delBtn">刪除目前範本</button>
+        </div>
+        <div class="row">
+            <button class="secondary" id="resetBtn">恢復預設範本</button>
+        </div>
+    </details>
+</div>
+
+<script>
+    // ===== 預設範本：直接改這裡 =====
+    const DEFAULT_TEMPLATES = [
+        { name: '已派案通知', text: '您好，您的案件已受理並派員處理，承辦人員將盡快與您聯繫，謝謝。' },
+        { name: '到場通知',   text: '您好，處理人員即將抵達現場，請稍候，謝謝。' },
+        { name: '結案通知',   text: '您好，您的案件已處理完畢，如有疑問請來電洽詢，謝謝。' }
+    ];
+    const STORE_KEY = 'smsTemplates';
+
+    const $ = id => document.getElementById(id);
+    let templates = load();
+
+    function load() {
+        try {
+            const saved = JSON.parse(localStorage.getItem(STORE_KEY));
+            if (Array.isArray(saved) && saved.length) return saved;
+        } catch (e) {}
+        return DEFAULT_TEMPLATES.map(t => ({ ...t }));
+    }
+    function persist() {
+        try { localStorage.setItem(STORE_KEY, JSON.stringify(templates)); } catch (e) {}
+    }
+
+    function renderTemplates(selected = 0) {
+        $('template').innerHTML = '';
+        templates.forEach((t, i) => {
+            const opt = document.createElement('option');
+            opt.value = i; opt.textContent = t.name;
+            $('template').appendChild(opt);
+        });
+        $('template').value = Math.min(selected, templates.length - 1);
+        $('message').value = templates[$('template').value]?.text || '';
+        updateCount();
+    }
+
+    function updateCount() {
+        const n = [...$('message').value].length;
+        // 中文簡訊每則約 70 字，超過會拆成多則（每則 67 字）
+        const parts = n <= 70 ? 1 : Math.ceil(n / 67);
+        $('count').textContent = `${n} 字，約 ${parts} 則簡訊`;
+    }
+
+    function cleanPhone(raw) {
+        let p = raw.replace(/[\s\-()]/g, '');
+        if (p.startsWith('+886')) p = '0' + p.slice(4);
+        return p;
+    }
+
+    function send() {
+        const phone = cleanPhone($('phone').value);
+        const hint = $('phoneHint');
+        if (!/^0\d{8,9}$/.test(phone)) {
+            hint.textContent = '電話格式不對，請輸入像 0912345678 的號碼。';
+            hint.classList.add('error');
+            $('phone').focus();
+            return;
+        }
+        hint.classList.remove('error');
+        hint.textContent = '已開啟簡訊 App，請按送出。';
+        const body = encodeURIComponent($('message').value);
+        // iOS 使用 &body=，Android 使用 ?body=
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+                      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        window.location.href = `sms:${phone}${isIOS ? '&' : '?'}body=${body}`;
+    }
+
+    $('template').addEventListener('change', () => {
+        $('message').value = templates[$('template').value].text;
+        updateCount();
+    });
+    $('message').addEventListener('input', updateCount);
+    $('phone').addEventListener('keydown', e => { if (e.key === 'Enter') send(); });
+    $('sendBtn').addEventListener('click', send);
+
+    $('saveBtn').addEventListener('click', () => {
+        const i = +$('template').value;
+        templates[i].text = $('message').value;
+        persist();
+        alert('已儲存「' + templates[i].name + '」');
+    });
+    $('addBtn').addEventListener('click', () => {
+        const name = prompt('新範本名稱：');
+        if (!name) return;
+        templates.push({ name, text: $('message').value });
+        persist();
+        renderTemplates(templates.length - 1);
+    });
+    $('delBtn').addEventListener('click', () => {
+        if (templates.length <= 1) { alert('至少要保留一個範本'); return; }
+        const i = +$('template').value;
+        if (!confirm('確定刪除「' + templates[i].name + '」？')) return;
+        templates.splice(i, 1);
+        persist();
+        renderTemplates(0);
+    });
+    $('resetBtn').addEventListener('click', () => {
+        if (!confirm('會清除你自訂的範本，確定？')) return;
+        templates = DEFAULT_TEMPLATES.map(t => ({ ...t }));
+        persist();
+        renderTemplates(0);
+    });
+
+    renderTemplates(0);
+</script>
+</body>
+</html>
